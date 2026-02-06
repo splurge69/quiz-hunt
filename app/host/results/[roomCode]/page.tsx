@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
@@ -9,6 +9,15 @@ import { Leaderboard } from '@/components/game/Leaderboard'
 import { useRoom } from '@/lib/hooks/useRoom'
 import { usePlayers } from '@/lib/hooks/usePlayers'
 
+// Hook to safely read localStorage on client
+function useLocalStorage(key: string): string | null {
+  return useSyncExternalStore(
+    () => () => {},
+    () => localStorage.getItem(key),
+    () => null
+  )
+}
+
 export default function HostResultsPage() {
   const params = useParams()
   const router = useRouter()
@@ -16,6 +25,7 @@ export default function HostResultsPage() {
   
   const { room, isLoading: roomLoading } = useRoom(roomCode)
   const { players, sortedByScore } = usePlayers(room?.id)
+  const playerId = useLocalStorage(`player_${roomCode}`)
 
   // Verify host identity
   useEffect(() => {
@@ -75,7 +85,7 @@ export default function HostResultsPage() {
         {/* Full leaderboard */}
         <Card variant="outlined">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Final Standings</h3>
-          <Leaderboard players={players} />
+          <Leaderboard players={players} highlightPlayerId={playerId || undefined} />
         </Card>
 
         {/* Actions */}

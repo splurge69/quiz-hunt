@@ -9,6 +9,13 @@ export type Json =
 export type RoomStatus = 'lobby' | 'playing' | 'finished' | 'cancelled'
 export type Difficulty = 'easy' | 'medium' | 'hard'
 
+// Question pack structure (stored as JSONB in Supabase)
+export type PackQuestion = {
+  text: string
+  options: [string, string, string, string]
+  correctIndex: number
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -172,6 +179,33 @@ export type Database = {
           }
         ]
       }
+      question_packs: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          difficulty: Difficulty
+          questions: PackQuestion[]
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          difficulty: Difficulty
+          questions: PackQuestion[]
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          difficulty?: Difficulty
+          questions?: PackQuestion[]
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -199,3 +233,4 @@ export type RoomInsert = Database['public']['Tables']['rooms']['Insert']
 export type QuestionInsert = Database['public']['Tables']['questions']['Insert']
 export type PlayerInsert = Database['public']['Tables']['players']['Insert']
 export type AnswerInsert = Database['public']['Tables']['answers']['Insert']
+export type QuestionPack = Database['public']['Tables']['question_packs']['Row']

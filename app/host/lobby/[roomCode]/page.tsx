@@ -51,22 +51,31 @@ export default function HostLobbyPage() {
       // Lock the room and start the game
       const questionEndsAt = new Date(Date.now() + 10000).toISOString()
       
-      const { error: updateError } = await supabase
+      console.log('Starting game, updating room:', room.id)
+      
+      const { data, error: updateError } = await supabase
         .from('rooms')
         .update({
-          status: 'playing',
+          status: 'playing' as const,
           locked: true,
           current_q_index: 0,
           question_ends_at: questionEndsAt,
         })
         .eq('id', room.id)
+        .select()
+      
+      console.log('Update result:', { data, error: updateError })
       
       if (updateError) {
         throw new Error(updateError.message)
       }
       
-      // Redirect will happen via the useEffect watching room.status
+      // If update succeeded, redirect manually (don't wait for realtime)
+      console.log('Update succeeded, redirecting to game')
+      router.push(`/host/game/${roomCode}`)
+      
     } catch (err) {
+      console.error('Failed to start game:', err)
       setError(err instanceof Error ? err.message : 'Failed to start game')
       setIsStarting(false)
     }
@@ -136,7 +145,7 @@ export default function HostLobbyPage() {
             isLoading={isStarting}
             disabled={players.length === 0}
           >
-            {players.length === 0 ? 'Waiting for players...' : `Start Game (${players.length} players)`}
+            {players.length === 0 ? 'Waiting for players...' : `Start Game (${players.length} player${players.length !== 1 ? 's' : ''})`}
           </Button>
           
           <Link href="/" className="block">
