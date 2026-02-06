@@ -1,15 +1,26 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useSyncExternalStore } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/Card'
 import { Timer } from '@/components/ui/Timer'
 import { QuestionCard } from '@/components/game/QuestionCard'
 import { AnswerButton } from '@/components/game/AnswerButton'
 import { useRoom } from '@/lib/hooks/useRoom'
+import { usePlayers } from '@/lib/hooks/usePlayers'
 import { useQuestion } from '@/lib/hooks/useQuestion'
 import { useTimer } from '@/lib/hooks/useTimer'
+import { useAnswers } from '@/lib/hooks/useAnswers'
 import { createClient } from '@/lib/supabase/client'
+
+// Hook to safely read localStorage on client
+function useLocalStorage(key: string): string | null {
+  return useSyncExternalStore(
+    () => () => {},
+    () => localStorage.getItem(key),
+    () => null
+  )
+}
 
 export default function PlayerGamePage() {
   const params = useParams()
@@ -17,24 +28,28 @@ export default function PlayerGamePage() {
   const roomCode = params.roomCode as string
   
   const { room, isLoading: roomLoading } = useRoom(roomCode)
+  const { players } = usePlayers(room?.id)
   const { currentQuestion, questions } = useQuestion(room)
   const { secondsRemaining, isExpired } = useTimer(room?.question_ends_at || null)
+  const { answerCount } = useAnswers(room?.id, room?.current_q_index)
   
-  const [playerId, setPlayerId] = useState<string | null>(null)
+  const playerId = useLocalStorage(`player_${roomCode}`)
+  
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [lastResult, setLastResult] = useState<{ isCorrect: boolean; points: number } | null>(null)
   const [answeredQuestions, setAnsweredQuestions] = useState<Set<number>>(new Set())
+  const [showResults, setShowResults] = useState(false)
 
-  // Get player ID from localStorage
+  // Check if all players have answered
+  const allPlayersAnswered = players.length > 0 && answerCount >= players.length
+
+  // Redirect if no player ID
   useEffect(() => {
-    const storedPlayerId = localStorage.getItem(`player_${roomCode}`)
-    if (storedPlayerId) {
-      setPlayerId(storedPlayerId)
-    } else {
+    if (!playerId && !roomLoading) {
       router.push('/join')
     }
-  }, [roomCode, router])
+  }, [playerId, roomLoading, router])
 
   // Reset selection when question changes
   useEffect(() => {
@@ -42,6 +57,7 @@ export default function PlayerGamePage() {
       if (!answeredQuestions.has(room.current_q_index)) {
         setSelectedAnswer(null)
         setLastResult(null)
+        setShowResults(false)
       }
     }
   }, [room?.current_q_index, answeredQuestions])
@@ -55,6 +71,13 @@ export default function PlayerGamePage() {
     }
   }, [room?.status, roomCode, router])
 
+  // Show results when timer expires OR all players answered
+  useEffect(() => {
+    if ((isExpired || allPlayersAnswered) && !showResults) {
+      setShowResults(true)
+    }
+  }, [isExpired, allPlayersAnswered, showResults])
+
   const handleSubmitAnswer = useCallback(async (answerIndex: number) => {
     if (!room || !playerId || selectedAnswer !== null || isSubmitting) return
     
@@ -64,13 +87,9 @@ export default function PlayerGamePage() {
     try {
       const supabase = createClient()
       
-      // Get the correct answer to calculate result locally
       const isCorrect = answerIndex === currentQuestion?.correct_index
-      
-      // Calculate points (10 per second remaining)
       const points = isCorrect ? Math.floor(secondsRemaining * 10) : 0
       
-      // Submit answer to database
       const { error } = await supabase
         .from('answers')
         .insert({
@@ -83,10 +102,8 @@ export default function PlayerGamePage() {
         })
       
       if (error) {
-        // Might be duplicate, ignore
         console.error('Answer submission error:', error)
       } else if (points > 0) {
-        // Update player score by fetching current and adding
         const { data: player } = await supabase
           .from('players')
           .select('score')
@@ -150,48 +167,49 @@ export default function PlayerGamePage() {
               text={option}
               isSelected={selectedAnswer === index}
               isCorrect={index === currentQuestion.correct_index}
-              showResult={isExpired}
-              disabled={hasAnswered || isExpired}
+              showResult={showResults}
+              disabled={hasAnswered || showResults}
               onClick={() => handleSubmitAnswer(index)}
             />
           ))}
         </div>
 
-        {/* Result feedback */}
-        {hasAnswered && (
-          <Card variant={lastResult?.isCorrect ? 'elevated' : 'outlined'} className="text-center">
-            {isExpired ? (
-              <div className="space-y-2">
-                {lastResult?.isCorrect ? (
-                  <>
-                    <div className="text-4xl">🎉</div>
-                    <p className="text-xl font-bold text-green-600">Correct!</p>
-                    <p className="text-gray-600">+{lastResult.points} points</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-4xl">😔</div>
-                    <p className="text-xl font-bold text-red-600">Wrong</p>
-                    <p className="text-gray-600">The correct answer is highlighted</p>
-                  </>
-                )}
-                <p className="text-sm text-gray-400 mt-4">Waiting for next question...</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="text-3xl">✓</div>
-                <p className="text-lg font-semibold text-gray-900">Answer locked in!</p>
-                <p className="text-sm text-gray-500">Waiting for timer to end...</p>
-              </div>
-            )}
+        {/* Status feedback */}
+        {hasAnswered && !showResults && (
+          <Card variant="outlined" className="text-center py-4">
+            <div className="text-3xl mb-2">✓</div>
+            <p className="text-lg font-semibold text-gray-900">Answer locked in!</p>
+            <p className="text-sm text-gray-500">
+              {allPlayersAnswered ? 'All players answered!' : `Waiting for others... (${answerCount}/${players.length})`}
+            </p>
           </Card>
         )}
 
-        {/* Waiting state */}
-        {!hasAnswered && isExpired && (
-          <Card variant="outlined" className="text-center">
-            <p className="text-gray-500">Time&apos;s up! You didn&apos;t answer this question.</p>
-            <p className="text-sm text-gray-400 mt-2">Waiting for next question...</p>
+        {/* Result feedback */}
+        {showResults && (
+          <Card variant={lastResult?.isCorrect ? 'elevated' : 'outlined'} className="text-center py-4">
+            {lastResult ? (
+              lastResult.isCorrect ? (
+                <div className="text-green-600">
+                  <div className="text-4xl mb-2">🎉</div>
+                  <p className="text-xl font-bold">Correct!</p>
+                  <p className="text-gray-600">+{lastResult.points} points</p>
+                </div>
+              ) : (
+                <div className="text-red-600">
+                  <div className="text-4xl mb-2">😔</div>
+                  <p className="text-xl font-bold">Wrong</p>
+                  <p className="text-gray-600">The correct answer is highlighted</p>
+                </div>
+              )
+            ) : (
+              <div className="text-gray-600">
+                <div className="text-4xl mb-2">⏱️</div>
+                <p className="text-xl font-bold">Time&apos;s up!</p>
+                <p className="text-gray-600">You didn&apos;t answer this question</p>
+              </div>
+            )}
+            <p className="text-sm text-gray-400 mt-4">Waiting for next question...</p>
           </Card>
         )}
       </div>
