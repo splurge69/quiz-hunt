@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
 }
 
 @theme inline {
@@ -12,15 +12,20 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  min-height: 100vh;
 }
+
+/* Answer button colors */
+.answer-0 { @apply bg-red-500 hover:bg-red-600 text-white; }
+.answer-1 { @apply bg-blue-500 hover:bg-blue-600 text-white; }
+.answer-2 { @apply bg-yellow-500 hover:bg-yellow-600 text-white; }
+.answer-3 { @apply bg-green-500 hover:bg-green-600 text-white; }
+
+.answer-0-selected { @apply bg-red-700 ring-4 ring-red-300; }
+.answer-1-selected { @apply bg-blue-700 ring-4 ring-blue-300; }
+.answer-2-selected { @apply bg-yellow-700 ring-4 ring-yellow-300; }
+.answer-3-selected { @apply bg-green-700 ring-4 ring-green-300; }
