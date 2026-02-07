@@ -3,13 +3,11 @@
 import { useEffect, useState, useCallback, useSyncExternalStore } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/Card'
-import { Timer } from '@/components/ui/Timer'
 import { QuestionCard } from '@/components/game/QuestionCard'
 import { AnswerButton } from '@/components/game/AnswerButton'
 import { useRoom } from '@/lib/hooks/useRoom'
 import { usePlayers } from '@/lib/hooks/usePlayers'
 import { useQuestion } from '@/lib/hooks/useQuestion'
-import { useTimer } from '@/lib/hooks/useTimer'
 import { useAnswers } from '@/lib/hooks/useAnswers'
 import { createClient } from '@/lib/supabase/client'
 
@@ -30,7 +28,6 @@ export default function PlayerGamePage() {
   const { room, isLoading: roomLoading } = useRoom(roomCode)
   const { players } = usePlayers(room?.id)
   const { currentQuestion, questions } = useQuestion(room)
-  const { secondsRemaining, isExpired } = useTimer(room?.question_ends_at || null)
   const { answerCount } = useAnswers(room?.id, room?.current_q_index)
   
   const playerId = useLocalStorage(`player_${roomCode}`)
@@ -71,12 +68,17 @@ export default function PlayerGamePage() {
     }
   }, [room?.status, roomCode, router])
 
-  // Show results when timer expires OR all players answered
+  // Check if host has signaled to show results (question_ends_at is set to past)
+  const hostSignaledResults = room?.question_ends_at 
+    ? new Date(room.question_ends_at).getTime() < Date.now()
+    : false
+
+  // Show results when all players have answered OR host signals
   useEffect(() => {
-    if ((isExpired || allPlayersAnswered) && !showResults) {
+    if ((allPlayersAnswered || hostSignaledResults) && !showResults) {
       setShowResults(true)
     }
-  }, [isExpired, allPlayersAnswered, showResults])
+  }, [allPlayersAnswered, hostSignaledResults, showResults])
 
   const handleSubmitAnswer = useCallback(async (answerIndex: number) => {
     if (!room || !playerId || selectedAnswer !== null || isSubmitting) return
@@ -88,7 +90,7 @@ export default function PlayerGamePage() {
       const supabase = createClient()
       
       const isCorrect = answerIndex === currentQuestion?.correct_index
-      const points = isCorrect ? Math.floor(secondsRemaining * 10) : 0
+      const points = isCorrect ? 100 : 0
       
       const { error } = await supabase
         .from('answers')
@@ -125,7 +127,7 @@ export default function PlayerGamePage() {
     } finally {
       setIsSubmitting(false)
     }
-  }, [room, playerId, selectedAnswer, isSubmitting, currentQuestion, secondsRemaining])
+  }, [room, playerId, selectedAnswer, isSubmitting, currentQuestion])
 
   if (roomLoading || !room || !currentQuestion) {
     return (
@@ -144,11 +146,6 @@ export default function PlayerGamePage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4 md:p-6">
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Header with timer */}
-        <div className="flex items-center justify-center">
-          <Timer seconds={secondsRemaining} size="lg" />
-        </div>
-
         {/* Question */}
         <Card variant="elevated" className="py-6">
           <QuestionCard
@@ -204,8 +201,8 @@ export default function PlayerGamePage() {
               )
             ) : (
               <div className="text-gray-600">
-                <div className="text-4xl mb-2">⏱️</div>
-                <p className="text-xl font-bold">Time&apos;s up!</p>
+                <div className="text-4xl mb-2">📊</div>
+                <p className="text-xl font-bold">Results</p>
                 <p className="text-gray-600">You didn&apos;t answer this question</p>
               </div>
             )}

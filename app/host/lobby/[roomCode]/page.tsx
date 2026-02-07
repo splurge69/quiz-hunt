@@ -48,9 +48,6 @@ export default function HostLobbyPage() {
     try {
       const supabase = createClient()
       
-      // Lock the room and start the game
-      const questionEndsAt = new Date(Date.now() + 10000).toISOString()
-      
       console.log('Starting game, updating room:', room.id)
       
       const { data, error: updateError } = await supabase
@@ -59,7 +56,6 @@ export default function HostLobbyPage() {
           status: 'playing' as const,
           locked: true,
           current_q_index: 0,
-          question_ends_at: questionEndsAt,
         })
         .eq('id', room.id)
         .select()

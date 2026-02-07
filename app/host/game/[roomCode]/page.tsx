@@ -3,14 +3,12 @@
 import { useEffect, useState, useCallback, useSyncExternalStore, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/Card'
-import { Timer } from '@/components/ui/Timer'
 import { Button } from '@/components/ui/Button'
 import { QuestionCard } from '@/components/game/QuestionCard'
 import { AnswerButton } from '@/components/game/AnswerButton'
 import { useRoom } from '@/lib/hooks/useRoom'
 import { usePlayers } from '@/lib/hooks/usePlayers'
 import { useQuestion } from '@/lib/hooks/useQuestion'
-import { useTimer } from '@/lib/hooks/useTimer'
 import { useAnswers } from '@/lib/hooks/useAnswers'
 import { createClient } from '@/lib/supabase/client'
 
@@ -31,7 +29,6 @@ export default function HostGamePage() {
   const { room, isLoading: roomLoading } = useRoom(roomCode)
   const { players, sortedByScore } = usePlayers(room?.id)
   const { currentQuestion, questions } = useQuestion(room)
-  const { secondsRemaining, isExpired } = useTimer(room?.question_ends_at || null)
   const { answerCount } = useAnswers(room?.id, room?.current_q_index)
   
   const playerId = useLocalStorage(`player_${roomCode}`)
@@ -63,12 +60,12 @@ export default function HostGamePage() {
     }
   }, [room?.status, roomCode, router])
 
-  // Show results when timer expires OR all players answered
+  // Show results when all players have answered
   useEffect(() => {
-    if ((isExpired || allPlayersAnswered) && !showResults) {
+    if (allPlayersAnswered && !showResults) {
       setShowResults(true)
     }
-  }, [isExpired, allPlayersAnswered, showResults])
+  }, [allPlayersAnswered, showResults])
 
   // Reset state when question changes
   useEffect(() => {
@@ -93,7 +90,7 @@ export default function HostGamePage() {
       const supabase = createClient()
       
       const isCorrect = answerIndex === currentQuestion?.correct_index
-      const points = isCorrect ? Math.floor(secondsRemaining * 10) : 0
+      const points = isCorrect ? 100 : 0
       
       const { error } = await supabase
         .from('answers')
@@ -130,7 +127,27 @@ export default function HostGamePage() {
     } finally {
       setIsSubmitting(false)
     }
-  }, [room, playerId, selectedAnswer, isSubmitting, currentQuestion, secondsRemaining])
+  }, [room, playerId, selectedAnswer, isSubmitting, currentQuestion])
+
+  // Broadcast show results to all players by setting question_ends_at to past
+  const handleShowResultsEarly = useCallback(async () => {
+    if (!room) return
+    
+    try {
+      const supabase = createClient()
+      // Set question_ends_at to a past date to signal "show results"
+      await supabase
+        .from('rooms')
+        .update({
+          question_ends_at: new Date(0).toISOString(),
+        })
+        .eq('id', room.id)
+      
+      setShowResults(true)
+    } catch (err) {
+      console.error('Failed to broadcast show results:', err)
+    }
+  }, [room])
 
   const handleNextQuestion = useCallback(async () => {
     if (!room || isAdvancingRef.current) return
@@ -150,12 +167,12 @@ export default function HostGamePage() {
         
         router.push(`/host/results/${roomCode}`)
       } else {
-        const questionEndsAt = new Date(Date.now() + 10000).toISOString()
+        // Clear question_ends_at when moving to next question
         await supabase
           .from('rooms')
           .update({
             current_q_index: nextIndex,
-            question_ends_at: questionEndsAt,
+            question_ends_at: null,
           })
           .eq('id', room.id)
       }
@@ -183,12 +200,20 @@ export default function HostGamePage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header with timer */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-500">
             {roomCode} &middot; {answerCount}/{players.length} answered
           </div>
-          <Timer seconds={secondsRemaining} />
+          {!showResults && answerCount > 0 && !allPlayersAnswered && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleShowResultsEarly}
+            >
+              Show Results Early
+            </Button>
+          )}
         </div>
 
         {/* Question */}
@@ -244,8 +269,8 @@ export default function HostGamePage() {
               )
             ) : (
               <div className="text-gray-600">
-                <div className="text-3xl mb-2">⏱️</div>
-                <p className="font-bold text-lg">Time&apos;s up!</p>
+                <div className="text-3xl mb-2">📊</div>
+                <p className="font-bold text-lg">Results</p>
               </div>
             )}
             
