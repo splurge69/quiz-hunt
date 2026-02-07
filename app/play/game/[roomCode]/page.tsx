@@ -28,17 +28,21 @@ export default function PlayerGamePage() {
   const { room, isLoading: roomLoading } = useRoom(roomCode)
   const { players } = usePlayers(room?.id)
   const { currentQuestion, questions } = useQuestion(room)
-  const { answerCount } = useAnswers(room?.id, room?.current_q_index)
+  const { answerCount: remoteAnswerCount } = useAnswers(room?.id, room?.current_q_index)
   
   const playerId = useLocalStorage(`player_${roomCode}`)
   
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
+  const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // Use optimistic count - ensure our own answer is counted even if realtime hasn't updated
+  const answerCount = Math.max(remoteAnswerCount, hasSubmittedAnswer ? 1 : 0)
   const [lastResult, setLastResult] = useState<{ isCorrect: boolean; points: number } | null>(null)
   const [answeredQuestions, setAnsweredQuestions] = useState<Set<number>>(new Set())
   const [showResults, setShowResults] = useState(false)
 
-  // Check if all players have answered
+  // Check if all players have answered (use optimistic count)
   const allPlayersAnswered = players.length > 0 && answerCount >= players.length
 
   // Redirect if no player ID
@@ -55,6 +59,7 @@ export default function PlayerGamePage() {
         setSelectedAnswer(null)
         setLastResult(null)
         setShowResults(false)
+        setHasSubmittedAnswer(false)
       }
     }
   }, [room?.current_q_index, answeredQuestions])
@@ -85,6 +90,7 @@ export default function PlayerGamePage() {
     
     setSelectedAnswer(answerIndex)
     setIsSubmitting(true)
+    setHasSubmittedAnswer(true)
     
     try {
       const supabase = createClient()
@@ -105,6 +111,7 @@ export default function PlayerGamePage() {
       
       if (error) {
         console.error('Answer submission error:', error)
+        setHasSubmittedAnswer(false)
       } else if (points > 0) {
         const { data: player } = await supabase
           .from('players')
@@ -124,6 +131,7 @@ export default function PlayerGamePage() {
       setAnsweredQuestions(prev => new Set(prev).add(room.current_q_index))
     } catch (err) {
       console.error('Failed to submit answer:', err)
+      setHasSubmittedAnswer(false)
     } finally {
       setIsSubmitting(false)
     }
